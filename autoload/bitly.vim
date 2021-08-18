@@ -15,31 +15,7 @@ function! s:get_visual_selection() "{{{
   return join(l:lines, "\n")
 endfunction "}}}
 
-function! bitly#convert() abort "{{{
-
-  try
-    let url = s:get_visual_selection()
-    let bitly_link = bitly#shorten(url)
-
-    " exec "normal! gvd"
-    " exec "normal! i" . bitly_link.id
-
-
-  catch /ERROR(\(Bitly\|BadConnection\|NotAuthorized\)):/    
-    let to_display = maktaba#error#Split(v:exception)[1]
-    call maktaba#error#Warn(to_display)
-
-  catch /E474/
-    call maktaba#error#Warn(v:exception)
-
-  finally
-    normal! `<
-  endtry
-
-
-endfunction "}}}
-
-function! s:on_stdout(id, data, event) abort
+function! s:on_stdout(id, data, event) abort "{{{
 
   if a:data == ['']
     return
@@ -75,58 +51,97 @@ function! s:on_stdout(id, data, event) abort
   endif
 
 
+endfunction "}}}
+
+function! s:sync_job(cmd) abort
+    let result = system(a:cmd)
+
+    let result = matchstr(result, '\V{\.\*')
+
+    if result ==# ''
+      call maktaba#error#Warn('Could not connect to host: %s', s:api_shorten)
+      return
+    endif
+
+    let json = json_decode(result)
+
+    if has_key(json, 'message') && has_key(json, 'description')
+      call maktaba#error#Warn('%s (%s)', json.description, json.message)
+      return
+
+    elseif has_key(json, 'message')
+      call maktaba#error#Warn('%s', json.message)
+      return
+
+    endif
+
+    exec "normal! gvd"
+    exec "normal! i" . json.id
+
 endfunction
 
-function! bitly#shorten(url) abort "{{{
-
+function! s:get_user_config() abort
+  let to_return = {}
   let token = get(g:, 'bitly_access_token', '')
 
   if empty(token)
-    throw maktaba#error#NotAuthorized('OAuth access token missing')
+    throw maktaba#error#NotAuthorized('OAuth access token is required.')
   endif
 
-  let authorization = yuki#string#surround('Authorization: Bearer ' . token, "'")
-  let content_type = yuki#string#surround('Content-Type: application/json', "'")
-  let request = 'POST'
+  let to_return.token = token
 
-  let json = { 'long_url': a:url, 'domain': 'bit.ly'}
-  let json_string = yuki#string#surround(json_encode(json), "'")
+  return to_return
+endfunction
 
-  let cmd = "curl"
-  let cmd = join([
-        \'curl', 
-        \'--silent', 
-        \'-H', authorization, 
-        \'-H', content_type, 
-        \'-X', request,
-        \'-d', json_string,
-        \s:api_shorten])
+function! s:get_cmd(url, token) abort
+    let authorization = yuki#string#surround('Authorization: Bearer ' . a:token, "'")
+    let content_type = yuki#string#surround('Content-Type: application/json', "'")
+    let request = 'POST'
 
-  " TODO async
+    let json = { 'long_url': a:url, 'domain': 'bit.ly'}
+    let json_string = yuki#string#surround(json_encode(json), "'")
 
-  let job = jobstart(cmd, 
-        \{
-        \'on_stdout': function('s:on_stdout'),
-        \}
-        \)
-  " let result = system(cmd)
+    let cmd = "curl"
+    let cmd = join([
+          \'curl', 
+          \'--silent', 
+          \'-H', authorization, 
+          \'-H', content_type, 
+          \'-X', request,
+          \'-d', json_string,
+          \s:api_shorten])
+    return cmd
+endfunction
 
-  " let result = matchstr(result, '\V{\.\*')
+function! bitly#convert() abort "{{{
 
-  " if result ==# ''
-  "   throw maktaba#error#Message('BadConnection', 'Could not connect to host: %s', s:api_shorten)
-  " endif
+  let url = s:get_visual_selection()
 
-  " let json = json_decode(result)
+  try
+    let user_config = s:get_user_config()
 
-  " if has_key(json, 'message') && has_key(json, 'description')
-  "   throw maktaba#error#Message('Bitly', '%s (%s)', json.description, json.message)
+    let cmd = s:get_cmd(url, user_config.token)
 
-  " elseif has_key(json, 'message')
-  "   throw maktaba#error#Message('Bitly', '%s', json.message)
+    if has('nvim')
+      call jobstart(cmd, 
+            \{
+            \'on_stdout': function('s:on_stdout'),
+            \}
+            \)
+    else
+      call s:sync_job(cmd)
 
-  " endif
+    endif
 
-  return 0
-  return json
+
+
+  catch /ERROR(NotAuthorized)/
+    let warning = maktaba#error#Split(v:exception)[0]
+    call maktaba#error#Warn(warning)
+
+  finally
+    normal! `<
+
+  endtry
+
 endfunction "}}}
