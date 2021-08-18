@@ -1,0 +1,18 @@
+
+['9', '']
+['8', '']
+['7', '']
+['6', '']
+['5', '']
+['4', '']
+['3', '']
+['2', '']
+[stdout] bomb: 2
+['1', '']
+[stderr] bomb: 1
+['']
+[stderr] bomb: 
+['']
+[stdout] bomb: 
+[exit] BOOM!
+[exit] job 11 ("bomb") finished!
