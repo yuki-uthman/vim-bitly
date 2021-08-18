@@ -20,8 +20,9 @@ function! bitly#convert() abort "{{{
   try
     let url = s:get_visual_selection()
     let bitly_link = bitly#shorten(url)
-    exec "normal! gvd"
-    exec "normal! i" . bitly_link.id
+
+    " exec "normal! gvd"
+    " exec "normal! i" . bitly_link.id
 
 
   catch /ERROR(\(Bitly\|BadConnection\|NotAuthorized\)):/    
@@ -37,6 +38,34 @@ function! bitly#convert() abort "{{{
 
 
 endfunction "}}}
+
+function! s:on_stdout(id, data, event) abort
+
+  if a:data == ['']
+    return
+  endif
+
+"  call Decho(string(a:data))
+
+  let [lnum1, col1] = getpos("'<")[1:2]
+  let [lnum2, col2] = getpos("'>")[1:2]
+
+"  call Decho(join([lnum1 , col1], ":"))
+"  call Decho(join([lnum2 , col2], ":"))
+
+  let json = json_decode(a:data[0])
+
+  let bufnr = 0
+  let start_row = lnum1 - 1
+  let end_row = lnum2 - 1
+
+  let start_col = col1 - 1
+  let end_col = col2 - 1
+
+  call nvim_buf_set_text(bufnr,start_row,start_col,end_row,end_col, [json.id])
+  redraw
+
+endfunction
 
 function! bitly#shorten(url) abort "{{{
 
@@ -63,26 +92,30 @@ function! bitly#shorten(url) abort "{{{
         \s:api_shorten])
 "  call Decho(cmd)
 
-  let result = system(cmd)
+  " TODO async
+
+  let job = jobstart(cmd, {'on_stdout': function('s:on_stdout')})
+  " let result = system(cmd)
 "  call Decho(result)
 
-  let result = matchstr(result, '\V{\.\*')
+  " let result = matchstr(result, '\V{\.\*')
 
 "  call Decho(result)
 
-  if result ==# ''
-    throw maktaba#error#Message('BadConnection', 'Could not connect to host: %s', s:api_shorten)
-  endif
+  " if result ==# ''
+  "   throw maktaba#error#Message('BadConnection', 'Could not connect to host: %s', s:api_shorten)
+  " endif
 
-  let json = json_decode(result)
+  " let json = json_decode(result)
 
-  if has_key(json, 'message') && has_key(json, 'description')
-    throw maktaba#error#Message('Bitly', '%s (%s)', json.description, json.message)
+  " if has_key(json, 'message') && has_key(json, 'description')
+  "   throw maktaba#error#Message('Bitly', '%s (%s)', json.description, json.message)
 
-  elseif has_key(json, 'message')
-    throw maktaba#error#Message('Bitly', '%s', json.message)
+  " elseif has_key(json, 'message')
+  "   throw maktaba#error#Message('Bitly', '%s', json.message)
 
-  endif
+  " endif
 
+  return 0
   return json
 endfunction "}}}
